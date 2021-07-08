@@ -1,0 +1,5 @@
+allow_roles:
+- name: Cloud Scheduler ジョブ実行者
+  role: roles/cloudscheduler.jobRunner
+exclude_members:
+- test.user1@example.com
