@@ -1,0 +1,25 @@
+name: test
+
+on:
+  push
+
+jobs:
+  unittest:
+    runs-on: ubuntu-latest
+    env:
+      CONFIG_YAML_PATH: config.yml
+    steps:
+    - uses: actions/checkout@v2
+    - uses: actions/setup-python@v2
+      with:
+        python-version: '3.8'
+        architecture: 'x64'
+    - name: Install Pipenv
+      run: |
+        pip install pipenv
+    - name: Install dependencies
+      run: |
+        pipenv install --dev
+    - name: Run unittest
+      run: |
+        pipenv run pytest .
