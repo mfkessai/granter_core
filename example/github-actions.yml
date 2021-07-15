@@ -26,6 +26,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v2
+    - name: Checkout tools repo
+      uses: actions/checkout@v2
+      with:
+        repository: mfkessai/granter_core
+        ref: main
+        path: core
     - uses: actions/setup-python@v2
       with:
         python-version: '3.8'
@@ -37,16 +43,16 @@ jobs:
     - uses: google-github-actions/setup-gcloud@master
       with:
        version: '290.0.0'
-       service_account_key: ${{ secrets.GCP_SA_STG_KEY }}
+       service_account_key: 
        export_default_credentials: true
     - name: Install dependencies
       working-directory: core    
       run: |
         pipenv install
-        echo $GOOGLE_APPLICATION_CREDENTIALS
-        ls -la $GOOGLE_APPLICATION_CREDENTIALS
     - name: Request ACL
       run: |
+        cp config.yml core/config.yml
+        cd core      
         pipenv run start set
       env:
         GITHUB_ACTOR: ${{ github.actor }}
