@@ -1,15 +1,35 @@
-import os
+import datetime
 
-from main import validate_exclude_members, validate_role
+import pytest
 
-
-def test_validate_role():
-    os.environ["CONFIG_YAML_PATH"] = "config.yml"
-    assert validate_role("hoge") == False
-    assert validate_role("roles/cloudscheduler.jobRunner") == True
+from main import Config, get_expiry
 
 
-def test_validate_exclude_members():
-    os.environ["CONFIG_YAML_PATH"] = "config.yml"
-    assert validate_exclude_members("hoge") == False
-    assert validate_exclude_members("test.user1@example.com") == True
+class TestConfig:
+    @pytest.fixture
+    def config(self):
+        return Config(["roles/cloudscheduler.jobRunner"], ["test.user1@example.com"])
+
+    class TestValidateRole:
+        def test_false(self, config):
+            assert config.validate_role("hoge") is False
+
+        def test_true(self, config):
+            assert config.validate_role("roles/cloudscheduler.jobRunner") is True
+
+    class TestValidateExcludeMember:
+        def test_false(self, config):
+            assert config.validate_exclude_member("hoge") is False
+
+        def test_true(self, config):
+            assert config.validate_exclude_member("test.user1@example.com") is True
+
+    def test_config_read(self, config):
+        assert Config.read("config.yml") == config
+
+
+@pytest.mark.freeze_time(datetime.datetime(2021, 8, 1, 12, 34))
+def test_get_expiry():
+    assert get_expiry(61) == datetime.datetime(
+        2021, 8, 1, 13, 35, tzinfo=datetime.timezone.utc
+    )

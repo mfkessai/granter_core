@@ -7,15 +7,12 @@ name = "pypi"
 start = "python main.py"
 
 [packages]
-argparse = "*"
-blinker = "*"
 google-api-python-client = "*"
 google-auth = "*"
 google-auth-httplib2 = "*"
 oauthlib = "*"
 pyyaml = "*"
 requests = "*"
-validators = "*"
 
 [dev-packages]
 black = "*"
@@ -23,7 +20,6 @@ isort = "*"
 pytest = "*"
 pytest-cov = "*"
 pytest-freezegun = "*"
-responses = "*"
 
 [requires]
 python_version = "3.8"
