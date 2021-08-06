@@ -1,7 +1,8 @@
 import argparse
 import datetime
 import os
-from datetime import timedelta, tzinfo
+from dataclasses import dataclass
+from typing import List
 
 import google.auth
 import googleapiclient.discovery
@@ -10,21 +11,27 @@ import yaml
 from oauthlib.oauth2.rfc6749.errors import OAuth2Error
 
 CLOUD_RM = "https://cloudresourcemanager.googleapis.com/v1/projects"
-ZERO = timedelta(0)
 
 
-class UTC(tzinfo):
-    def utcoffset(self, dt):
-        return ZERO
+@dataclass
+class Config:
+    allow_roles: List[str]
+    exclude_members: List[str]
 
-    def tzname(self, dt):
-        return "UTC"
+    def validate_exclude_member(self, member):
+        return member in self.exclude_members
 
-    def dst(self, dt):
-        return ZERO
+    def validate_role(self, role):
+        return role in self.allow_roles
 
-
-utc = UTC()
+    @staticmethod
+    def read(file) -> "Config":
+        with open(file) as f:
+            obj = yaml.safe_load(f)
+        return Config(
+            allow_roles=[allow_roles["role"] for allow_roles in obj["allow_roles"]],
+            exclude_members=obj["exclude_members"],
+        )
 
 
 def get_policy(project_id, version=3):
@@ -58,33 +65,7 @@ def set_policy(project_id, policy):
     return policy
 
 
-def validate_exclude_members(member):
-    with open(os.getenv("CONFIG_YAML_PATH")) as file:
-        obj = yaml.safe_load(file)
-        members = obj["exclude_members"]
-
-    exists = False
-    for v in members:
-        if v == member:
-            exists = True
-
-    return exists
-
-
-def validate_role(role):
-    with open(os.getenv("CONFIG_YAML_PATH")) as file:
-        obj = yaml.safe_load(file)
-        roles = obj["allow_roles"]
-
-    exists = False
-    for v in roles:
-        if v["role"] == role:
-            exists = True
-
-    return exists
-
-
-def clear_confition(project):
+def clear_condition(project):
     new_policy = {"policy": get_policy(project)}
     bindings = []
     for b in new_policy["policy"]["bindings"]:
@@ -106,14 +87,19 @@ def clear_confition(project):
     return
 
 
+def get_expiry(minutes: int) -> datetime.datetime:
+    return datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(
+        minutes=minutes
+    )
+
+
 def set_condition(period, project, user_or_group, account, access):
     """exclude_membersの場合は制限を受けない"""
-    if validate_exclude_members(account) == False and validate_role(access) == False:
+    config = Config.read(os.getenv("CONFIG_YAML_PATH"))
+    if not config.validate_exclude_member(account) and not config.validate_role(access):
         raise Exception("{}は許可されていません。config.ymlを確認してください。".format(access))
 
-    expiry = (
-        datetime.datetime.now(utc) + datetime.timedelta(minutes=period)
-    ).isoformat()
+    expiry = get_expiry(period).isoformat()
 
     new_policy = {"policy": get_policy(project)}
 
@@ -121,7 +107,7 @@ def set_condition(period, project, user_or_group, account, access):
         {
             "condition": {
                 "expression": 'request.time < timestamp("{}")'.format(expiry),
-                "description": "This is a temporary grant created by GithuｂActions",
+                "description": "This is a temporary grant created by Github Actions",
                 "title": "granted by {}".format(os.getenv("GITHUB_ACTOR")),
             },
             "members": ["{}:{}".format(user_or_group, account)],
@@ -140,32 +126,18 @@ def set_condition(period, project, user_or_group, account, access):
     return
 
 
-def command_clear(args):
-    clear_confition(os.getenv("IAM_PROJECT"))
-
-
-def command_set(args):
-    set_condition(
-        int(os.getenv("IAM_PERIOD")),
-        os.getenv("IAM_PROJECT"),
-        "user",
-        os.getenv("IAM_TARGET_ACCOUNT"),
-        os.getenv("IAM_ACCESS"),
-    )
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    subparsers = parser.add_subparsers()
-
-    parser_clear = subparsers.add_parser("clear")
-    parser_clear.set_defaults(handler=command_clear)
-
-    parser_set = subparsers.add_parser("set")
-    parser_set.set_defaults(handler=command_set)
+    parser.add_argument("target", choices={"clear", "set"})
 
     args = parser.parse_args()
-    if hasattr(args, "handler"):
-        args.handler(args)
-    else:
-        parser.print_help()
+    if args.target == "clear":
+        clear_condition(os.getenv("IAM_PROJECT"))
+    if args.target == "set":
+        set_condition(
+            period=int(os.getenv("IAM_PERIOD")),
+            project=os.getenv("IAM_PROJECT"),
+            user_or_group="user",
+            account=os.getenv("IAM_TARGET_ACCOUNT"),
+            access=os.getenv("IAM_ACCESS"),
+        )
