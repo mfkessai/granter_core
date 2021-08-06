@@ -1,6 +1,7 @@
+import datetime
+
 import pytest
 
-import datetime
 from main import Config, get_expiry
 
 
