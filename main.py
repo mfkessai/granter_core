@@ -31,7 +31,7 @@ class Config:
         )
 
 
-def get_policy(project_id: str, version=3):
+def fetch_policy(project_id: str, version=3):
     credentials, project = google.auth.default()
     service = googleapiclient.discovery.build(
         "cloudresourcemanager", "v1", credentials=credentials
@@ -71,7 +71,7 @@ def remove_condition_bindings(bindings):
 
 
 def clear_condition(project: str):
-    new_policy = get_policy(project)
+    new_policy = fetch_policy(project)
 
     new_policy["bindings"] = remove_condition_bindings(new_policy["bindings"])
     new_policy["version"] = 3
@@ -135,7 +135,7 @@ def set_condition(
         access=access,
         actor=actor,
     )
-    policy = get_policy(project)
+    policy = fetch_policy(project)
     new_policy = add_binding(policy=policy, binding=binding)
 
     try:

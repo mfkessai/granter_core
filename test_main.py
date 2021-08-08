@@ -26,10 +26,10 @@ class TestConfig:
                 ("test.user1@example.com", "roles/cloudscheduler.jobRunner"),
             ],
         )
-        def test_not_exclude_member_and_role(self, config, member, role):
+        def test_ok(self, config, member, role):
             assert config.validate("hoge", "roles/cloudscheduler.jobRunner") is None
 
-        def test_not_exclude_member_and_not_role(self, config):
+        def test_raise(self, config):
             with pytest.raises(Exception, match="hogeは許可されていません。config.ymlを確認してください。"):
                 config.validate("hoge", "hoge")
 
@@ -123,7 +123,7 @@ class TestSetCondition:
             "etag": "xxxxx",
             "version": 1,
         }
-        mocker.patch("main.get_policy", return_value=policy)
+        mocker.patch("main.fetch_policy", return_value=policy)
         mocker.patch("main.set_policy", return_value=None)
 
         set_condition(
