@@ -1,4 +1,5 @@
 import argparse
+import copy
 import datetime
 import os
 from dataclasses import dataclass
@@ -10,19 +11,15 @@ import requests
 import yaml
 from oauthlib.oauth2.rfc6749.errors import OAuth2Error
 
-CLOUD_RM = "https://cloudresourcemanager.googleapis.com/v1/projects"
-
 
 @dataclass
 class Config:
     allow_roles: List[str]
     exclude_members: List[str]
 
-    def validate_exclude_member(self, member):
-        return member in self.exclude_members
-
-    def validate_role(self, role):
-        return role in self.allow_roles
+    def validate(self, member, role):
+        if member not in self.exclude_members and role not in self.allow_roles:
+            raise Exception(f"{role}は許可されていません。config.ymlを確認してください。")
 
     @staticmethod
     def read(file) -> "Config":
@@ -34,7 +31,7 @@ class Config:
         )
 
 
-def get_policy(project_id, version=3):
+def get_policy(project_id: str, version=3):
     credentials, project = google.auth.default()
     service = googleapiclient.discovery.build(
         "cloudresourcemanager", "v1", credentials=credentials
@@ -50,7 +47,7 @@ def get_policy(project_id, version=3):
     return policy
 
 
-def set_policy(project_id, policy):
+def set_policy(project_id: str, policy):
     credentials, project = google.auth.default()
     service = googleapiclient.discovery.build(
         "cloudresourcemanager", "v1", credentials=credentials
@@ -65,21 +62,22 @@ def set_policy(project_id, policy):
     return policy
 
 
-def clear_condition(project):
-    new_policy = {"policy": get_policy(project)}
-    bindings = []
-    for b in new_policy["policy"]["bindings"]:
-        if "condition" in b:
-            if "granted" in b["condition"]["title"]:
-                continue
+def remove_condition_bindings(bindings):
+    return [
+        b
+        for b in bindings
+        if "condition" not in b or "granted" not in b["condition"]["title"]
+    ]
 
-        bindings.append(b)
 
-    new_policy["policy"]["bindings"] = bindings
-    new_policy["policy"]["version"] = 3
+def clear_condition(project: str):
+    new_policy = get_policy(project)
+
+    new_policy["bindings"] = remove_condition_bindings(new_policy["bindings"])
+    new_policy["version"] = 3
 
     try:
-        set_policy(project, new_policy["policy"])
+        set_policy(project, new_policy)
     except (OAuth2Error, requests.HTTPError):
         print("Could not apply new policy")
         return
@@ -93,32 +91,55 @@ def get_expiry(minutes: int) -> datetime.datetime:
     )
 
 
-def set_condition(period, project, user_or_group, account, access):
+def get_binding(
+    expiry: datetime.datetime, user_or_group: str, account: str, access: str, actor: str
+):
+    return {
+        "condition": {
+            "expression": f'request.time < timestamp("{expiry.isoformat()}")',
+            "description": "This is a temporary grant created by Github Actions",
+            "title": f"granted by {actor}",
+        },
+        "members": [f"{user_or_group}:{account}"],
+        "role": access,
+    }
+
+
+def add_binding(policy, binding):
+    new_policy = copy.deepcopy(policy)
+
+    new_policy["bindings"].append(binding)
+    new_policy["version"] = 3
+
+    return new_policy
+
+
+def set_condition(
+    period: int,
+    project: str,
+    user_or_group: str,
+    account: str,
+    access: str,
+    config_file: str,
+    actor: str,
+):
     """exclude_membersの場合は制限を受けない"""
-    config = Config.read(os.getenv("CONFIG_YAML_PATH"))
-    if not config.validate_exclude_member(account) and not config.validate_role(access):
-        raise Exception("{}は許可されていません。config.ymlを確認してください。".format(access))
+    config = Config.read(config_file)
+    config.validate(member=account, role=access)
 
-    expiry = get_expiry(period).isoformat()
-
-    new_policy = {"policy": get_policy(project)}
-
-    new_policy["policy"]["bindings"].append(
-        {
-            "condition": {
-                "expression": 'request.time < timestamp("{}")'.format(expiry),
-                "description": "This is a temporary grant created by Github Actions",
-                "title": "granted by {}".format(os.getenv("GITHUB_ACTOR")),
-            },
-            "members": ["{}:{}".format(user_or_group, account)],
-            "role": access,
-        }
+    expiry = get_expiry(period)
+    binding = get_binding(
+        expiry=expiry,
+        user_or_group=user_or_group,
+        account=account,
+        access=access,
+        actor=actor,
     )
-
-    new_policy["policy"]["version"] = 3
+    policy = get_policy(project)
+    new_policy = add_binding(policy=policy, binding=binding)
 
     try:
-        set_policy(project, new_policy["policy"])
+        set_policy(project, new_policy)
     except (OAuth2Error, requests.HTTPError):
         print("Could not apply new policy")
         return
@@ -140,4 +161,6 @@ if __name__ == "__main__":
             user_or_group="user",
             account=os.getenv("IAM_TARGET_ACCOUNT"),
             access=os.getenv("IAM_ACCESS"),
+            config_file=os.getenv("CONFIG_YAML_PATH"),
+            actor=os.getenv("GITHUB_ACTOR"),
         )
