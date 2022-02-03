@@ -39,4 +39,4 @@ jobs:
     - name: Check black and isort
       run: |
         pipenv run black --check .
-        pipenv run isort --check-only .
+        pipenv run isort --check-only --profile=black .

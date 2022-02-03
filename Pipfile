@@ -20,6 +20,7 @@ isort = "*"
 pytest = "*"
 pytest-cov = "*"
 pytest-freezegun = "*"
+pytest-mock = "*"
 
 [requires]
 python_version = "3.8"
